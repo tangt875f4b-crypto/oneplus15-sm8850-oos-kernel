@@ -49,7 +49,7 @@ jobs:
           test -d "$KDIR"
           test -f "$KDIR/Makefile"
           test -f "$KERNEL_SRC/Makefile"
-          echo "DDK kernelrelease=$(make -s -C "$KDIR" kernelrelease)"
+          mkdir -p "$GITHUB_WORKSPACE/out"\n          make -s -C "$KDIR" kernelrelease | tee "$GITHUB_WORKSPACE/out/ddk-kernelrelease.txt"
           clang --version | head -1
           llvm-strip --version | head -1
 
