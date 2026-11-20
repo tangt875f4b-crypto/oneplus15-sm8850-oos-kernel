@@ -1,0 +1,3 @@
+[submodule "susfs4ksu-lkm-port/base-v2.3"]
+	path = susfs4ksu-lkm-port/base-v2.3
+	url = https://github.com/inforcqb/susfs4ksu-for-lkm.git
