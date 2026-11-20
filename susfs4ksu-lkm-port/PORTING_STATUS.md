@@ -61,7 +61,7 @@ UranXSU's `docs/susfs-kernel-contract.md` describes built-in kernel patch requir
 - [ ] Build for exact Android 16 / 6.12 target.
 - [ ] Run static/interface checks and package test ZIP.
 
-No installable binary is claimed by this document.
+A KMI6 build candidate has now been produced and uploaded as a GitHub Actions artifact; it is not yet device-validated and must not be treated as a confirmed safe install.
 
 
 ## Additional target-source verification (2026-11-20)
@@ -89,3 +89,25 @@ The user's linked OnePlus kernel repository `main` has `kernel_platform/common/M
 A matching generic GKI 6.12.69 source snapshot was identified at `cctv18/android_gki_kernel_common` commit `58ee67741556c83c523f48518284c4a6b1ef31d6` (branch `android16-6.12-2026-03`). The DDK workflow is pinned to the Android 16 / 6.12 KMI6 toolchain; the build log's reported `kernelrelease` must be checked before calling it an exact 6.12.69 build.
 
 Before any device install, verify the full output of `uname -r` on the phone and confirm it contains the expected Android 16 KMI6 tag.
+
+
+## Build result (2026-11-20)
+
+- GitHub Actions run: `44690468266` — success.
+- Artifact: `susfs-2.4.0-oneplus15-android16-6.12` (14-day retention; expires 2026-12-04).
+- ZIP: `SUSFS-2.4.0-OnePlus15-android16-6.12.zip`.
+- ZIP SHA-256: `0a07ea276b1a49dcdce10b22415f8e8bc1a12f1cb0947b946a0924c22ed73d57`.
+- Built module: ARM64 `susfs_guard_lkm-android16-6.12.ko`.
+- Built standalone loader: ARM64 `susfs_insmod`.
+- DDK kernel release: `6.12.76-4k`; build KMI target: `android16-6.12` (KMI6). This is a KMI6 DDK build, not an exact 6.12.69 patch-level build.
+- Passed: source/ABI layout tests, layering tests, CFI-site checks, host loader symbol-match regression test, ZIP integrity, KMI override and provenance assertions.
+- Package embeds `kmi_override=android16-6.12`, so the loader selects the single matching KMI without calling `ksud`.
+
+## Remaining pre-install checks
+
+1. Obtain the phone's complete `uname -r` string and confirm it is Android 16 KMI6 (e.g. `android16-6`); the user's earlier report only gave `6.12.69`.
+2. Confirm the device does not already have built-in SUSFS active; the module loader has a duplicate-detection guard, but this must be observed on-device.
+3. Test module load and each 2.4 feature on the actual OnePlus 15. A successful cross-build does not prove runtime hook compatibility.
+4. FinaSU v1.6.4 release notes include Priority UID Filter controls. Older manager versions may not expose the new controls. The LKM includes the SUS_PATH UID-filter command, but manager-side UI support for that command is not yet confirmed.
+
+No boot image was modified or flashed by this workflow.
