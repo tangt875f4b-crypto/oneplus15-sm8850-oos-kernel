@@ -80,7 +80,11 @@ def main():
             raise SystemExit(f"ddk images file is not a JSON list: {args.ddk_images}")
 
     provenance = {
-        "repository": "https://github.com/inforcqb/susfs4ksu-lkm",
+        "repository": "https://github.com/tangt875f4b-crypto/oneplus15-sm8850-oos-kernel",
+        "base_repository": "https://github.com/inforcqb/susfs4ksu-for-lkm",
+        "base_tag": "v2.3.0-r18.9-1",
+        "reference_repository": "https://github.com/UIRAN23/UranXSU",
+        "reference_commit": "9ade2f03c7bc2e39b231e0b05105cd548226d2f4",
         "tag": args.tag,
         # The provenance has to say which source and which toolchain produced these
         # bytes; the tag alone ties the ZIP to a name, not to a tree.  Both are
