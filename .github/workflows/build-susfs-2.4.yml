@@ -99,12 +99,12 @@ jobs:
             --ddk-images "$GITHUB_WORKSPACE/out/ddk-images.json" \
             --kmi-override "$SUSFS_KMI" \
             --out "$GITHUB_WORKSPACE/out/SUSFS-2.4.0-OnePlus15-$SUSFS_KMI.zip"
-          unzip -t "$GITHUB_WORKSPACE/out/SUSFS-2.4.0-OnePlus15-$SUSFS_KMI.zip"
           python3 - <<'PY'
           import json, zipfile
           from pathlib import Path
           p = Path("out/SUSFS-2.4.0-OnePlus15-android16-6.12.zip")
           with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
               assert z.read("kmi_override") == b"android16-6.12\\n"
               assert z.read("kmis").decode().split() == ["android16-6.12"]
               meta = json.loads(z.read("provenance.json"))
