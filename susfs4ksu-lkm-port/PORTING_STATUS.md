@@ -57,7 +57,7 @@ UranXSU's `docs/susfs-kernel-contract.md` describes built-in kernel patch requir
 - [x] Identified new command IDs and Priority UID Filter source.
 - [x] Identified potential KSTAT ABI layout incompatibility.
 - [ ] Import reviewed source snapshot.
-- [ ] Complete file-by-file migration.
+- [ ] Complete file-by-file migration from the pinned reference into the target module design.
 - [ ] Build for exact Android 16 / 6.12 target.
 - [ ] Run static/interface checks and package test ZIP.
 
