@@ -37,7 +37,7 @@ def main():
             provenance = z.read("provenance.json").decode()
             for needle in ('"github_sha": "' + "1" * 40 + '"',
                            '"github_run_id": 12345',
-                           '"build_workflow": ".github/workflows/build-ddk.yml"',
+                           '"build_workflow": ".github/workflows/build-susfs-2.4.yml"',
                            "sha256:" + "0" * 64):
                 assert needle in provenance, (needle, provenance)
 
