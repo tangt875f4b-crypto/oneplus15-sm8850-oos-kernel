@@ -34,7 +34,7 @@ UranXSU-vendored 2.4 `kernel/susfs_abi.h`:
 - `SUSFS_VERSION_STR` is `v2.4.0`.
 - Adds `CMD_SUSFS_SET_SUS_PATH_UID_FILTER` (0x55554).
 - Adds `CMD_SUSFS_SET_PRIORITY_UID_FILTER` (0x60030).
-- Changes KSTAT `is_statically` from `int` in the inspected 2.3 LKM ABI to `bool` in the 2.4 reference ABI. This may alter layout/alignment and MUST be reconciled with the actual userspace client before copying structures.
+- Changes KSTAT `is_statically` from `int` in the inspected 2.3 LKM ABI to `bool` in the 2.4 reference ABI. On arm64, the following `unsigned long` remains 8-byte aligned, so subsequent offsets and total structure size are expected to remain unchanged; verify the userspace declaration and 0/1 encoding.
 - Adds `susfs_priority.c`, command dispatch and enabled-feature reporting for Priority UID Filter.
 
 ## Important distinction: built-in kernel patch contract vs LKM
@@ -45,7 +45,7 @@ UranXSU's `docs/susfs-kernel-contract.md` describes built-in kernel patch requir
 1. Use current original default-branch source as the behavior/loader baseline, not only the old release ZIP.
 2. Compare original LKM files against the vendored 2.4 LKM snapshot.
 3. Port 2.4 additions selectively while retaining the target project's LKM integration and packaging.
-4. Audit command IDs and every ABI structure against the userspace actually used with FinaSU; resolve the KSTAT field-layout difference before shipping.
+4. Audit command IDs and every ABI structure against the userspace actually used with FinaSU; the KSTAT type changes, but its arm64 offsets/size are expected to remain stable due to 8-byte alignment.
 5. Check new code against Android 16 / 6.12.69 headers and symbols.
 6. Build against exact matching DDK/KMI inputs; an `android16-6.12` label alone does not prove vendor symbol compatibility.
 7. Keep artifacts separate from active device installation. No boot image changes or automatic flashing.
@@ -56,10 +56,10 @@ UranXSU's `docs/susfs-kernel-contract.md` describes built-in kernel patch requir
 - [x] Located full SUSFS 2.4.0 LKM reference tree.
 - [x] Identified new command IDs and Priority UID Filter source.
 - [x] Identified potential KSTAT ABI layout incompatibility.
-- [ ] Import reviewed source snapshot.
-- [ ] Complete file-by-file migration from the pinned reference into the target module design.
-- [ ] Build for exact Android 16 / 6.12 target.
-- [ ] Run static/interface checks and package test ZIP.
+- [x] Import the pinned 2.4.0 reference snapshot and preserve the exact 2.3.0 release baseline.
+- [x] Assemble a separate 2.4 candidate using the reference kernel sources and original 2.3 loader/packaging scripts; apply local correctness fixes.
+- [x] Build and package a generic Android 16 / 6.12 KMI6 candidate against the pinned DDK image (not an exact patch-level device build).
+- [x] Pass host-side source, ABI-layout, layering, CFI-site, loader-regression and ZIP/provenance checks.
 
 A KMI6 build candidate has now been produced and uploaded as a GitHub Actions artifact; it is not yet device-validated and must not be treated as a confirmed safe install.
 
@@ -70,7 +70,7 @@ The linked personal kernel repository's checked-in `kernel_platform/common/Makef
 
 The original v2.3.0-r18.9-1 source is pinned as a submodule at commit `8619b6ee0d0629836e9c6ce668e8a785dfd53517`. This preserves the exact release baseline without copying or modifying the upstream repository.
 
-The 2.4 reference source files are stored separately under `reference-2.4/kernel/`; they are audit inputs only, not yet applied to the v2.3 source tree.
+The 2.4 reference source files are stored separately under `reference-v2.4.0/`; the assembled candidate under `candidate-v2.4.0/` uses the 2.4 kernel implementation while retaining the original v2.3 module loader and packaging scripts.
 
 
 ## Candidate assembly and KMI6 build
@@ -99,7 +99,7 @@ Before any device install, verify the full output of `uname -r` on the phone and
 - ZIP SHA-256: `0a07ea276b1a49dcdce10b22415f8e8bc1a12f1cb0947b946a0924c22ed73d57`.
 - Built module: ARM64 `susfs_guard_lkm-android16-6.12.ko`.
 - Built standalone loader: ARM64 `susfs_insmod`.
-- DDK kernel release: `6.12.76-4k`; build KMI target: `android16-6.12` (KMI6). This is a KMI6 DDK build, not an exact 6.12.69 patch-level build.
+- DDK kernel release: `6.12.76-4k`; build target: Android 16 / 6.12 KMI6. The loader's `android16-6.12` selector is an OS/kernel-series label, not a KMI-generation string. This is same-generation validation, not an exact 6.12.69 patch-level build.
 - Passed: source/ABI layout tests, layering tests, CFI-site checks, host loader symbol-match regression test, ZIP integrity, KMI override and provenance assertions.
 - Package embeds `kmi_override=android16-6.12`, so the loader selects the single matching KMI without calling `ksud`.
 
@@ -111,3 +111,10 @@ Before any device install, verify the full output of `uname -r` on the phone and
 4. FinaSU v1.6.4 release notes include Priority UID Filter controls. Older manager versions may not expose the new controls. The LKM includes the SUS_PATH UID-filter command, but manager-side UI support for that command is not yet confirmed.
 
 No boot image was modified or flashed by this workflow.
+
+
+## Loader compatibility and risk note
+
+The retained original susfs_insmod loader resolves undefined kernel symbols through /proc/kallsyms, rewrites them as absolute symbols, and only patches vermagic after the kernel reports a mismatch. This is intentionally ksud-independent, but it bypasses normal symbol CRC/KMI-whitelist checks. The built module's __versions section is empty in this DDK build. This makes exact runtime symbol availability and function/data ABI compatibility especially important; a successful compile does not prove a safe device load.
+
+The OnePlus 15 6.12.69 public kernel profile is reported as Android 16 KMI6. The user's own builder script has a default suffix containing android16-5, which appears stale relative to the 6.12.69 source branch and must not be used as the device's authoritative runtime identity. Obtain the complete on-device uname -r before install. The candidate ZIP is review-only until that string is confirmed.
