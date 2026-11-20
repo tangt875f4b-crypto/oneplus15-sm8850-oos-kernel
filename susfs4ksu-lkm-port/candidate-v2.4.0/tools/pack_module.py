@@ -91,7 +91,7 @@ def main():
         # recorded only when the caller supplies them (the host pack test does not).
         "github_sha": args.sha or None,
         "github_run_id": int(args.run_id) if args.run_id.isdigit() else None,
-        "build_workflow": ".github/workflows/build-ddk.yml",
+        "build_workflow": ".github/workflows/build-susfs-2.4.yml",
         "ddk_images": ddk_images,
         "architecture": "arm64",
         "supported_kmis": kmis,
