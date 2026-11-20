@@ -1,0 +1,201 @@
+name: Assemble SUSFS 2.4 compatibility candidate
+
+on:
+  push:
+    branches:
+      - susfs-2.4-port-work
+    paths:
+      - .github/workflows/assemble-susfs-candidate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout isolated source workspace
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 1
+          sparse-checkout: |
+            susfs4ksu-lkm-port
+            .github/workflows
+          sparse-checkout-cone-mode: true
+
+      - name: Assemble candidate and apply reviewed fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATE=susfs4ksu-lkm-port/candidate-v2.4.0
+          mkdir -p "$CANDIDATE"
+          cp -a susfs4ksu-lkm-port/reference-v2.4.0/kernel "$CANDIDATE/"
+          cp -a susfs4ksu-lkm-port/baseline-v2.3.0-r18.9-1/module "$CANDIDATE/"
+          cp -a susfs4ksu-lkm-port/baseline-v2.3.0-r18.9-1/tools "$CANDIDATE/"
+          cp susfs4ksu-lkm-port/reference-v2.4.0/LICENSE "$CANDIDATE/LICENSE"
+          cp susfs4ksu-lkm-port/baseline-v2.3.0-r18.9-1/LICENSE "$CANDIDATE/LICENSE-ORIGINAL"
+          cp susfs4ksu-lkm-port/reference-v2.4.0/UPSTREAM.md "$CANDIDATE/UPSTREAM.md"
+          cp susfs4ksu-lkm-port/reference-v2.4.0/VERSION "$CANDIDATE/VERSION"
+          cp susfs4ksu-lkm-port/reference-v2.4.0/build-lkm.sh "$CANDIDATE/build-lkm.sh"
+          cp susfs4ksu-lkm-port/reference-v2.4.0/build-insmod.sh "$CANDIDATE/build-insmod.sh"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("susfs4ksu-lkm-port/candidate-v2.4.0")
+
+          p = root / "kernel/susfs_priority.c"
+          s = p.read_text()
+          old = """static inline bool susfs_priority_should_hide(int which, int who)
+          {
+          	if (which == 2 /* PRIO_USER / IOPRIO_WHO_USER */ && current_uid().val >= 10000) {
+          		uid_t target_uid = who ? (uid_t)who : current_uid().val;
+          		return susfs_is_priority_uid_filtered(target_uid);
+          	}
+          	return false;
+          }"""
+          new = """static inline bool susfs_priority_should_hide_prio(int which, int who)
+          {
+          	uid_t target_uid;
+          	if (which != PRIO_USER || current_uid().val < 10000)
+          		return false;
+          	target_uid = who ? (uid_t)who : current_uid().val;
+          	return susfs_is_priority_uid_filtered(target_uid);
+          }
+
+          static inline bool susfs_priority_should_hide_ioprio(int which, int who)
+          {
+          	uid_t target_uid;
+          	if (which != IOPRIO_WHO_USER || current_uid().val < 10000)
+          		return false;
+          	target_uid = who ? (uid_t)who : current_uid().val;
+          	return susfs_is_priority_uid_filtered(target_uid);
+          }"""
+          if s.count(old) != 1:
+              raise SystemExit("priority helper pattern not found exactly once")
+          s = s.replace(old, new)
+          mapping = {
+              "priority_wrap_getpriority": "susfs_priority_should_hide_prio",
+              "priority_wrap_setpriority": "susfs_priority_should_hide_prio",
+              "priority_wrap_ioprio_get": "susfs_priority_should_hide_ioprio",
+              "priority_wrap_ioprio_set": "susfs_priority_should_hide_ioprio",
+              "priority_wrap_compat_getpriority": "susfs_priority_should_hide_prio",
+              "priority_wrap_compat_setpriority": "susfs_priority_should_hide_prio",
+              "priority_wrap_compat_ioprio_get": "susfs_priority_should_hide_ioprio",
+              "priority_wrap_compat_ioprio_set": "susfs_priority_should_hide_ioprio",
+          }
+          for fn, helper in mapping.items():
+              start = s.index("static __nocfi long " + fn + "(")
+              end = s.index("\n}", start)
+              block = s[start:end]
+              old_call = "susfs_priority_should_hide((int)regs->regs[0], (int)regs->regs[1])"
+              if block.count(old_call) != 1:
+                  raise SystemExit(f"expected one generic filter call in {fn}")
+              block = block.replace(old_call, helper + "((int)regs->regs[0], (int)regs->regs[1])")
+              s = s[:start] + block + s[end:]
+          p.write_text(s)
+
+          p = root / "kernel/susfs_avc_spoof.c"
+          s = p.read_text()
+          if "#include <linux/rcupdate.h>" not in s:
+              s = s.replace("#include <linux/hashtable.h>", "#include <linux/hashtable.h>\n#include <linux/rcupdate.h>")
+          s = s.replace(
+              "struct st_susfs_sus_type_hlist {\n\tstruct hlist_node node;\n};",
+              "struct st_susfs_sus_type_hlist {\n\tstruct hlist_node node;\n\tstruct rcu_head rcu;\n\tu32 type_value;\n};"
+          )
+          s = s.replace(
+              "struct susfs_sus_av_rule {\n\tstruct hlist_node node;",
+              "struct susfs_sus_av_rule {\n\tstruct hlist_node node;\n\tstruct rcu_head rcu;"
+          )
+          old_loop = """	hash_for_each_possible_safe(SUS_TYPE_HLIST, tmp_entry, tmp_hlist_node, node, type_value) {
+          		SUSFS_LOGE("secctx '%s', type_value '%u', was added before already\\n",
+          			secctx, type_value);
+          		err = -EINVAL;
+          		goto unlock;
+          	}"""
+          new_loop = """	hash_for_each_possible_safe(SUS_TYPE_HLIST, tmp_entry, tmp_hlist_node, node, type_value) {
+          		if (tmp_entry->type_value == type_value) {
+          			SUSFS_LOGE("secctx '%s', type_value '%u', was added before already\\n",
+          				secctx, type_value);
+          			err = -EINVAL;
+          			goto unlock;
+          		}
+          	}"""
+          if s.count(old_loop) != 1:
+              raise SystemExit("SELinux type duplicate-check pattern not found")
+          s = s.replace(old_loop, new_loop)
+          s = s.replace(
+              "hash_add_rcu(SUS_TYPE_HLIST, &new_entry->node, type_value);",
+              "new_entry->type_value = type_value;\n\thash_add_rcu(SUS_TYPE_HLIST, &new_entry->node, type_value);"
+          )
+          s = s.replace(
+              "hash_for_each_possible_rcu(SUS_TYPE_HLIST, entry, node, type_value) {\n\t\treturn true;\n\t}",
+              "hash_for_each_possible_rcu(SUS_TYPE_HLIST, entry, node, type_value) {\n\t\tif (entry->type_value == type_value)\n\t\t\treturn true;\n\t}"
+          )
+          s = s.replace("entry = kzalloc(sizeof(*entry), GFP_ATOMIC);", "entry = kzalloc(sizeof(*entry), GFP_KERNEL);")
+          s = s.replace("hash_del_rcu(&type_entry->node);\n\t\tkfree(type_entry);",
+                        "hash_del_rcu(&type_entry->node);\n\t\tkfree_rcu(type_entry, rcu);")
+          s = s.replace("hash_del_rcu(&av_entry->node);\n\t\tkfree(av_entry);",
+                        "hash_del_rcu(&av_entry->node);\n\t\tkfree_rcu(av_entry, rcu);")
+          if "if (entry->type_value == type_value)" not in s or "kfree_rcu(type_entry, rcu)" not in s or "kfree_rcu(av_entry, rcu)" not in s:
+              raise SystemExit("SELinux RCU/type-key patch did not fully apply")
+          p.write_text(s)
+          PY
+
+          cat > "$CANDIDATE/README.md" <<'EOF'
+          # SUSFS 2.4.0 compatibility candidate
+
+          This candidate combines the SUSFS 2.4.0 LKM kernel source with the original
+          v2.3.0-r18.9-1 module loader scripts and packaging tools. The original
+          module load.sh, KMI selection, early dispatcher, and packer are retained.
+
+          Local correctness fixes:
+          - Split PRIO_USER and IOPRIO_WHO_USER filtering; they are different Linux ABI values.
+          - Make the SELinux SUS type hash collision-safe by storing and comparing the full type value.
+          - Use RCU-deferred freeing for SELinux type and access-vector rule entries.
+          - Use GFP_KERNEL for allocation while holding the AVD-rule mutex.
+
+          Target: OnePlus 15 ARM64, owner-reported Android 16 / 6.12.69.
+          The linked kernel repository default branch currently contains 6.12.35, so it is not
+          treated as an exact 6.12.69 build source.
+
+          This directory is source-only. No .ko, flashable ZIP, boot image, or install operation
+          is included until exact KMI compatibility and compilation are verified. No ksud
+          dependency is intentionally added.
+          EOF
+
+          cat > "$CANDIDATE/PORTING_PATCHES.md" <<'EOF'
+          # Local migration patches
+
+          1. Priority UID Filter uses PRIO_USER for getpriority/setpriority and IOPRIO_WHO_USER
+             for ioprio_get/ioprio_set, including compat wrappers.
+          2. SUS type hash entries store type_value; lookup and duplicate detection compare the
+             full value rather than treating every hash-bucket collision as a match.
+          3. SELinux type and AVD-rule nodes include rcu_head and are released with kfree_rcu()
+             after hash_del_rcu().
+          4. AVD-rule allocation uses GFP_KERNEL while holding its mutex.
+
+          These are source-level correctness fixes and still require compile-time/runtime checks.
+          EOF
+
+      - name: Validate candidate patch invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'which != PRIO_USER' susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_priority.c
+          grep -q 'which != IOPRIO_WHO_USER' susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_priority.c
+          grep -q 'if (entry->type_value == type_value)' susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_avc_spoof.c
+          grep -q 'kfree_rcu(type_entry, rcu)' susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_avc_spoof.c
+          grep -q 'kfree_rcu(av_entry, rcu)' susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_avc_spoof.c
+          grep -q 'susfs_priority_should_hide_ioprio' susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_priority.c
+          echo "Candidate patch invariants: PASS"
+
+      - name: Commit candidate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add susfs4ksu-lkm-port/candidate-v2.4.0
+          git commit -m "port: assemble SUSFS 2.4 with original loader and safety fixes"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
