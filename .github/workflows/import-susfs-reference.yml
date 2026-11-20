@@ -1,0 +1,48 @@
+name: Import SUSFS 2.4 reference source
+
+on:
+  push:
+    branches:
+      - susfs-2.4-port-work
+    paths:
+      - .github/workflows/import-susfs-reference.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import-reference:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout work branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 1
+
+      - name: Fetch pinned SUSFS 2.4.0 reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout https://github.com/UIRAN23/UranXSU.git /tmp/uranxsu
+          git -C /tmp/uranxsu checkout --detach 9ade2f03c7bc2e39b231e0b05105cd548226d2f4
+          mkdir -p susfs4ksu-lkm-port/reference-v2.4.0
+          cp -a /tmp/uranxsu/userspace/susfs_lkm/. susfs4ksu-lkm-port/reference-v2.4.0/
+          cat > susfs4ksu-lkm-port/reference-v2.4.0/SOURCE-REVISION.txt <<'EOF'
+          Source repository: https://github.com/UIRAN23/UranXSU
+          Source path: userspace/susfs_lkm
+          Pinned commit: 9ade2f03c7bc2e39b231e0b05105cd548226d2f4
+          Version marker: v2.4.0
+          This is an isolated reference snapshot for review, not yet the integrated target module.
+          Preserve the included LICENSE and UPSTREAM.md notices.
+          EOF
+
+      - name: Commit reference snapshot to this branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add susfs4ksu-lkm-port/reference-v2.4.0
+          git commit -m "vendor: add pinned SUSFS 2.4.0 LKM reference snapshot"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
