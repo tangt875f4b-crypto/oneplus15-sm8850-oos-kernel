@@ -62,3 +62,12 @@ UranXSU's `docs/susfs-kernel-contract.md` describes built-in kernel patch requir
 - [ ] Run static/interface checks and package test ZIP.
 
 No installable binary is claimed by this document.
+
+
+## Additional target-source verification (2026-11-20)
+
+The linked personal kernel repository's checked-in `kernel_platform/common/Makefile` identifies Linux **6.12.35**, and its README identifies the qualified build as Android 16 ACK generation 5 / 6.12.35. The owner's previously reported live kernel is **6.12.69**. These are not the same source/build identity. Do not claim the 6.12.35 DDK build is an exact 6.12.69 match.
+
+The original v2.3.0-r18.9-1 source is pinned as a submodule at commit `8619b6ee0d0629836e9c6ce668e8a785dfd53517`. This preserves the exact release baseline without copying or modifying the upstream repository.
+
+The 2.4 reference source files are stored separately under `reference-2.4/kernel/`; they are audit inputs only, not yet applied to the v2.3 source tree.
