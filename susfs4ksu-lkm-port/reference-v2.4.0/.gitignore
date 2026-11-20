@@ -1,0 +1,11 @@
+dist/
+out/
+payload/
+__pycache__/
+kernel/*.o
+kernel/*.ko
+kernel/.*.cmd
+kernel/*.mod
+kernel/*.mod.c
+kernel/Module.symvers
+kernel/modules.order

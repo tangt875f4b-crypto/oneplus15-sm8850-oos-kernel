@@ -1,0 +1,6 @@
+id=susfs_guard_lkm
+name=SusFS LKM by uran
+version=v2.4.0
+versionCode=20400
+author=uran
+description=SusFS LKM by uran for GKI arm64 (KernelSU)

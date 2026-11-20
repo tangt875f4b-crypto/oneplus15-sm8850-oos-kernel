@@ -1,0 +1,6 @@
+Source repository: https://github.com/UIRAN23/UranXSU
+Source path: userspace/susfs_lkm
+Pinned commit: 9ade2f03c7bc2e39b231e0b05105cd548226d2f4
+Version marker: v2.4.0
+This is an isolated reference snapshot for review, not yet the integrated target module.
+Preserve the included LICENSE and UPSTREAM.md notices.
