@@ -71,3 +71,21 @@ The linked personal kernel repository's checked-in `kernel_platform/common/Makef
 The original v2.3.0-r18.9-1 source is pinned as a submodule at commit `8619b6ee0d0629836e9c6ce668e8a785dfd53517`. This preserves the exact release baseline without copying or modifying the upstream repository.
 
 The 2.4 reference source files are stored separately under `reference-2.4/kernel/`; they are audit inputs only, not yet applied to the v2.3 source tree.
+
+
+## Candidate assembly and KMI6 build
+
+- Exact original release baseline: `inforcqb/susfs4ksu-for-lkm` tag `v2.3.0-r18.9-1`, commit `8619b6ee0d0629836e9c6ce668e8a785dfd53517`.
+- 2.4 LKM reference: `UIRAN23/UranXSU` commit `9ade2f03c7bc2e39b231e0b05105cd548226d2f4`.
+- Candidate assembled at `susfs4ksu-lkm-port/candidate-v2.4.0/`: 2.4 kernel source plus the original v2.3 module scripts and packer.
+- Local source fixes applied: separate `PRIO_USER` and `IOPRIO_WHO_USER` handling; compare full SELinux type IDs inside hash buckets; use `kfree_rcu()` for RCU-visible SELinux records; use `GFP_KERNEL` under the AVD-rule mutex.
+- The candidate packer records the base and reference commits in `provenance.json` and can write `android16-6.12` into `kmi_override`, avoiding the loader's ksud fallback.
+- Build workflow: `.github/workflows/build-susfs-2.4.yml`, targeting Android 16 / 6.12 KMI6 with the pinned DDK image. The run is currently pending/in progress; no compiled artifact is claimed yet.
+
+## Kernel source identity warning
+
+The user's linked OnePlus kernel repository `main` has `kernel_platform/common/Makefile` at Linux 6.12.35 (Android 16 KMI generation 5). The phone's reported runtime kernel is 6.12.69; public OnePlus 15 6.12.69 builds identify Android 16 KMI generation 6. The 6.12.35 source tree is therefore not used as an exact KMI6 build source.
+
+A matching generic GKI 6.12.69 source snapshot was identified at `cctv18/android_gki_kernel_common` commit `58ee67741556c83c523f48518284c4a6b1ef31d6` (branch `android16-6.12-2026-03`). The DDK workflow is pinned to the Android 16 / 6.12 KMI6 toolchain; the build log's reported `kernelrelease` must be checked before calling it an exact 6.12.69 build.
+
+Before any device install, verify the full output of `uname -r` on the phone and confirm it contains the expected Android 16 KMI6 tag.
