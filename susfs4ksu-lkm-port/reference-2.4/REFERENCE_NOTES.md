@@ -18,3 +18,8 @@ Important review findings before integration:
 5. FinaSU's 2.4 SELinux type-registration calls are kernel-patch integration points; an LKM can only satisfy them if its exported functions and symbol visibility match the running FinaSU build.
 
 No build or runtime success is implied by this reference snapshot.
+
+
+## ABI clarification
+
+The `int` to `bool` change in the first KSTAT field is not automatically a wire-layout break on the target arm64 LP64 ABI: the following `unsigned long` is 8-byte aligned, so both forms place it at offset 8. The same field also remains at offset 4 on common ILP32 layouts due to the next field's alignment. The type/boolean semantics still differ, so integration must include compile-time `sizeof`/`offsetof` assertions against the userspace ABI actually used by FinaSU. Do not treat the earlier warning as proof of a size/offset mismatch.
