@@ -1,0 +1,105 @@
+name: Build SUSFS 2.4 candidate (Android 16 / 6.12)
+
+on:
+  push:
+    branches:
+      - susfs-2.4-port-work
+    paths:
+      - .github/workflows/build-susfs-candidate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-android16-6.12:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: ghcr.io/ylarod/ddk-min:android16-6.12-20260828@sha256:fd3ec5cc71d7f2716212e9df8d5674a9afe68fb769282fcac87b83f207f949ee
+      options: --privileged
+    steps:
+      - name: Checkout candidate only
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 1
+          sparse-checkout: |
+            susfs4ksu-lkm-port/candidate-v2.4.0
+            .github/workflows
+          sparse-checkout-cone-mode: true
+
+      - name: Inspect DDK inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "KDIR=$KDIR"
+          echo "KERNEL_SRC=$KERNEL_SRC"
+          clang --version | head -1
+          test -n "$KDIR"
+          test -f "$KDIR/Makefile"
+          test -f "$KERNEL_SRC/include/linux/lsm_hooks.h"
+          cat "$KDIR/include/generated/utsrelease.h" || true
+
+      - name: Build Android 16 / 6.12 LKM
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATE="$GITHUB_WORKSPACE/susfs4ksu-lkm-port/candidate-v2.4.0"
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          SUSFS_OUT="$GITHUB_WORKSPACE/out/susfs_guard_lkm-android16-6.12.ko" \
+            SUSFS_KMI=android16-6.12 \
+            "$CANDIDATE/build-lkm.sh"
+          test -s "$GITHUB_WORKSPACE/out/susfs_guard_lkm-android16-6.12.ko"
+          file "$GITHUB_WORKSPACE/out/susfs_guard_lkm-android16-6.12.ko"
+          modinfo "$GITHUB_WORKSPACE/out/susfs_guard_lkm-android16-6.12.ko" || true
+
+      - name: Build original standalone loader
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATE="$GITHUB_WORKSPACE/susfs4ksu-lkm-port/candidate-v2.4.0"
+          SUSFS_INSMOD_OUT="$GITHUB_WORKSPACE/out/susfs_insmod" \
+            "$CANDIDATE/build-insmod.sh"
+          test -s "$GITHUB_WORKSPACE/out/susfs_insmod"
+          file "$GITHUB_WORKSPACE/out/susfs_insmod"
+
+      - name: Validate module metadata and unresolved symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          KO="$GITHUB_WORKSPACE/out/susfs_guard_lkm-android16-6.12.ko"
+          readelf -h "$KO" | grep -q 'AArch64'
+          readelf -p .modinfo "$KO" | grep -q 'import_ns'
+          if nm -u "$KO" | grep -E ' (kallsyms_lookup_name|kallsyms_lookup|kallsyms_on_each_symbol)$'; then
+            echo "::error::LKM contains forbidden link-time kallsyms imports"
+            exit 1
+          fi
+          grep -q 'which != PRIO_USER' "$GITHUB_WORKSPACE/susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_priority.c"
+          grep -q 'which != IOPRIO_WHO_USER' "$GITHUB_WORKSPACE/susfs4ksu-lkm-port/candidate-v2.4.0/kernel/susfs_priority.c"
+          echo "ELF/metadata/static migration checks: PASS"
+
+      - name: Package original-loader test ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          CANDIDATE="$GITHUB_WORKSPACE/susfs4ksu-lkm-port/candidate-v2.4.0"
+          python3 "$CANDIDATE/tools/pack_module.py" \
+            --ko-dir "$GITHUB_WORKSPACE/out" \
+            --insmod "$GITHUB_WORKSPACE/out/susfs_insmod" \
+            --tag v2.4.0-rc1 \
+            --kmi-override android16-6.12 \
+            --sha "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" \
+            --out "$GITHUB_WORKSPACE/out/susfs_guard_lkm-v2.4.0-rc1-android16-6.12.zip"
+          sha256sum "$GITHUB_WORKSPACE/out/"*
+
+      - name: Upload build artifacts for review only
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: susfs-2.4-android16-6.12-review-only
+          path: |
+            out/susfs_guard_lkm-android16-6.12.ko
+            out/susfs_insmod
+            out/susfs_guard_lkm-v2.4.0-rc1-android16-6.12.zip
+          if-no-files-found: error
+          retention-days: 7
